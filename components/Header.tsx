@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTheme } from '../hooks/useTheme';
 
 interface HeaderProps {
     title: string | null;
@@ -9,6 +10,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onOpenShareModal }) => {
     const [isHelpOpen, setIsHelpOpen] = useState(false);
     const helpPopoverRef = useRef<HTMLDivElement>(null);
     const helpButtonRef = useRef<HTMLButtonElement>(null);
+    const [theme, setTheme] = useTheme();
 
     // Close popover on outside click
     useEffect(() => {
@@ -46,6 +48,13 @@ export const Header: React.FC<HeaderProps> = ({ title, onOpenShareModal }) => {
                     )}
                 </div>
                 <div className="flex items-center">
+                     <button
+                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                        className="p-2 rounded-full text-text-secondary hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-text transition-colors mr-2"
+                        aria-label="Toggle theme"
+                    >
+                        <span className="material-icons">{theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'light_mode' : 'dark_mode'}</span>
+                    </button>
                     {title ? (
                          <button
                             onClick={onOpenShareModal}

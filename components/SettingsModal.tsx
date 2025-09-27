@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme, Theme } from '../hooks/useTheme';
-import { User } from '../App';
+
+// FIX: Define the User type locally since it's not exported from `../App`.
+interface User {
+    name: string;
+    email: string;
+}
 
 interface SettingsModalProps {
     isOpen: boolean;

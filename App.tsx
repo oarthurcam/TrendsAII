@@ -4,13 +4,10 @@ import { FileUpload } from './components/FileUpload';
 import { analyzeExcelData, AnalysisResult } from './services/geminiService';
 import { Footer } from './components/Footer';
 import { ChartRenderer } from './components/ChartRenderer';
-import { SettingsModal } from './components/SettingsModal';
-import { useTheme } from './hooks/useTheme';
 import { ShareModal } from './components/ShareModal';
 
 // TypeScript declaration for the libraries loaded from CDN
 declare const XLSX: any;
-declare const html2canvas: any;
 
 // Define a type for the parsed Excel data
 export type DataRow = { [key: string]: string | number };
@@ -23,136 +20,6 @@ interface HistoryEntry {
   data: DataRow[];
 }
 
-// Define User type for authentication
-export interface User {
-  name: string;
-  email: string;
-}
-
-// URL for the backend API server
-const API_BASE_URL = '';
-
-// --- Authentication Component ---
-const Auth: React.FC<{ onAuthSuccess: (user: User) => void }> = ({ onAuthSuccess }) => {
-  const [isLogin, setIsLogin] = useState(true);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setIsLoading(true);
-
-    const endpoint = isLogin ? `${API_BASE_URL}/api/login` : `${API_BASE_URL}/api/register`;
-    const payload = isLogin ? { email, password } : { name, email, password };
-
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        localStorage.setItem('app_currentUser', JSON.stringify(data.user));
-        onAuthSuccess(data.user);
-      } else {
-        setError(data.message || 'Ocorreu um erro.');
-      }
-    } catch (e) {
-      console.error("Auth error:", e);
-      setError('Falha na conexão com o servidor. O backend está configurado corretamente para produção?');
-    } finally {
-        setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="bg-background min-h-screen flex items-center justify-center p-4">
-        <div className="max-w-md w-full">
-            <div className="flex justify-center items-center gap-1 mb-8" aria-label="TrendsAI Logo">
-                <span className="material-icons text-primary text-4xl">analytics</span>
-                <div className="flex items-baseline text-3xl">
-                    <span className="font-semibold text-text tracking-tight">Trends</span>
-                    <span className="font-bold text-primary tracking-tight">AI</span>
-                </div>
-            </div>
-            <div className="bg-card p-8 rounded-xl shadow-md space-y-6">
-                <h2 className="text-2xl font-bold text-center text-text">{isLogin ? 'Entrar na sua conta' : 'Criar uma conta'}</h2>
-                {error && (
-                    <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm dark:bg-red-900/20 dark:text-red-300">
-                        {error}
-                    </div>
-                )}
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    {!isLogin && (
-                        <div>
-                            <label htmlFor="name" className="block text-sm font-medium text-text-secondary">Nome</label>
-                            <input
-                                id="name"
-                                name="name"
-                                type="text"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                required
-                                className="mt-1 block w-full px-3 py-2 bg-card border border-border rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
-                            />
-                        </div>
-                    )}
-                    <div>
-                        <label htmlFor="email" className="block text-sm font-medium text-text-secondary">Email</label>
-                        <input
-                            id="email"
-                            name="email"
-                            type="email"
-                            autoComplete="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                            className="mt-1 block w-full px-3 py-2 bg-card border border-border rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
-                        />
-                    </div>
-                    <div>
-                        <label htmlFor="password" className="block text-sm font-medium text-text-secondary">Senha</label>
-                        <input
-                            id="password"
-                            name="password"
-                            type="password"
-                            autoComplete="current-password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            className="mt-1 block w-full px-3 py-2 bg-card border border-border rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
-                        />
-                    </div>
-                    <button
-                        type="submit"
-                        disabled={isLoading}
-                        className="w-full inline-flex items-center justify-center px-4 py-2.5 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-primary disabled:opacity-50"
-                    >
-                        {isLoading ? 'Processando...' : (isLogin ? 'Entrar' : 'Criar conta')}
-                    </button>
-                </form>
-                <p className="text-center text-sm text-text-secondary">
-                    {isLogin ? 'Não tem uma conta?' : 'Já tem uma conta?'}
-                    <button onClick={() => setIsLogin(!isLogin)} className="font-medium text-primary hover:underline ml-1">
-                        {isLogin ? 'Cadastre-se' : 'Entrar'}
-                    </button>
-                </p>
-            </div>
-        </div>
-    </div>
-  );
-};
-
-
 interface ChatGPTSidebarProps {
     history: HistoryEntry[];
     activeId: string | null;
@@ -162,19 +29,13 @@ interface ChatGPTSidebarProps {
     onRenameHistory: (id: string, newTitle: string) => void;
     isOpen: boolean;
     onToggle: () => void;
-    user: User | null;
-    onLogout: () => void;
-    onOpenSettings: () => void;
 }
 
-const ChatGPTSidebar: React.FC<ChatGPTSidebarProps> = ({ history, activeId, onNewInsight, onSelectHistory, onDeleteHistory, onRenameHistory, isOpen, onToggle, user, onLogout, onOpenSettings }) => {
+const ChatGPTSidebar: React.FC<ChatGPTSidebarProps> = ({ history, activeId, onNewInsight, onSelectHistory, onDeleteHistory, onRenameHistory, isOpen, onToggle }) => {
     const [popoverState, setPopoverState] = useState<{ id: string | null; x: number; y: number }>({ id: null, x: 0, y: 0 });
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
     const renameInputRef = useRef<HTMLInputElement>(null);
-    const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-    const userMenuRef = useRef<HTMLDivElement>(null);
-    const userButtonRef = useRef<HTMLButtonElement>(null);
 
     const SidebarLink: React.FC<{ icon: string; text: string }> = ({ icon, text }) => (
         <div className="flex items-center space-x-4 p-3 rounded-md hover:bg-slate-500/10 text-text-secondary hover:text-primary transition-colors">
@@ -208,26 +69,6 @@ const ChatGPTSidebar: React.FC<ChatGPTSidebarProps> = ({ history, activeId, onNe
         };
     }, [popoverState.id, handleClosePopover]);
 
-    // Close user menu on outside click
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (
-                userMenuRef.current &&
-                !userMenuRef.current.contains(event.target as Node) &&
-                userButtonRef.current &&
-                !userButtonRef.current.contains(event.target as Node)
-            ) {
-                setIsUserMenuOpen(false);
-            }
-        };
-
-        if (isUserMenuOpen) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [isUserMenuOpen]);
 
     const handleStartRename = (id: string, currentTitle: string) => {
         handleClosePopover();
@@ -254,15 +95,6 @@ const ChatGPTSidebar: React.FC<ChatGPTSidebarProps> = ({ history, activeId, onNe
         handleClosePopover();
         onDeleteHistory(id);
     };
-
-    const getUserInitials = (name: string | undefined) => {
-        if (!name) return '';
-        const names = name.split(' ');
-        if (names.length > 1) {
-            return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
-        }
-        return name.substring(0, 2).toUpperCase();
-    }
 
     return (
         <>
@@ -336,69 +168,12 @@ const ChatGPTSidebar: React.FC<ChatGPTSidebarProps> = ({ history, activeId, onNe
                                 </div>
                             ))}
                         </div>
-
-                        {user && (
-                             <div className="flex-shrink-0 mt-2 p-1 border-t border-border relative">
-                                {isUserMenuOpen && (
-                                     <div
-                                        ref={userMenuRef}
-                                        className="absolute bottom-full mb-2 left-0 right-0 mx-1 bg-card rounded-md shadow-lg border border-border z-10 animate-fade-in-up"
-                                    >
-                                        <div className="p-1">
-                                            <button 
-                                                className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-slate-500/10 flex items-center gap-2 text-text-secondary"
-                                                onClick={() => {
-                                                    onOpenSettings();
-                                                    setIsUserMenuOpen(false);
-                                                }}
-                                            >
-                                                <span className="material-icons text-base">settings</span>
-                                                Configurações
-                                            </button>
-                                            <button 
-                                                onClick={() => {
-                                                    onLogout();
-                                                    setIsUserMenuOpen(false);
-                                                }}
-                                                className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-red-500/10 hover:text-red-400 flex items-center gap-2 text-red-400"
-                                            >
-                                                <span className="material-icons text-base">logout</span>
-                                                Sair
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                                <button
-                                    ref={userButtonRef}
-                                    onClick={() => setIsUserMenuOpen(prev => !prev)}
-                                    className="flex items-center justify-between p-2 rounded-md hover:bg-slate-500/10 group w-full text-left"
-                                    aria-haspopup="true"
-                                    aria-expanded={isUserMenuOpen}
-                                >
-                                    <div className="flex items-center gap-x-3 overflow-hidden">
-                                        <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-                                            <span className="text-white font-semibold text-sm">{getUserInitials(user.name)}</span>
-                                        </div>
-                                        <div className="flex flex-col items-start overflow-hidden">
-                                            <span className="text-sm font-medium text-text truncate w-full">{user.name}</span>
-                                            <span className="text-xs text-text-secondary truncate w-full">{user.email}</span>
-                                        </div>
-                                    </div>
-                                    <span className="material-icons text-lg text-text-secondary group-hover:text-text">more_vert</span>
-                                </button>
-                            </div>
-                        )}
                     </div>
                 ) : (
-                    <div className="flex flex-col h-full w-full items-center justify-between">
+                    <div className="flex h-full w-full items-center justify-start flex-col">
                         <button onClick={onToggle} className="p-2 rounded-md hover:bg-slate-500/10">
                             <span className="material-icons text-xl text-primary">menu</span>
                         </button>
-                        {user && (
-                            <button onClick={onOpenSettings} className="w-9 h-9 rounded-full bg-primary flex items-center justify-center cursor-pointer hover:opacity-90" title={user.name}>
-                                <span className="text-white font-semibold text-sm">{getUserInitials(user.name)}</span>
-                            </button>
-                        )}
                     </div>
                 )}
             </aside>
@@ -493,7 +268,6 @@ const ChartCard: React.FC<{ chartInfo: AnalysisResult['suggestedChart'] | undefi
 };
 
 const App: React.FC = () => {
-  useTheme(); // Initialize theme hook
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [insights, setInsights] = useState<AnalysisResult | null>(null);
@@ -504,64 +278,25 @@ const App: React.FC = () => {
   const [analysisHistory, setAnalysisHistory] = useState<HistoryEntry[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const dashboardRef = useRef<HTMLDivElement>(null);
 
-  // Load user from local storage on initial render
+  // Load history from local storage on initial render
   useEffect(() => {
-    const storedUser = localStorage.getItem('app_currentUser');
-    if (storedUser) {
-      try {
-        const parsedUser: User = JSON.parse(storedUser);
-        if (parsedUser.name && parsedUser.email) {
-          setUser(parsedUser);
-        } else {
-          localStorage.removeItem('app_currentUser');
-        }
-      } catch (e) {
-        localStorage.removeItem('app_currentUser');
-      }
-    }
-  }, []);
-  
-  // Load and save history based on the current user
-  useEffect(() => {
-    if (user) {
-      // Load history for the logged-in user
-      const storedHistory = localStorage.getItem(`analysis_history_${user.email}`);
+      const storedHistory = localStorage.getItem('analysis_history');
       if (storedHistory) {
         setAnalysisHistory(JSON.parse(storedHistory));
-      } else {
-        setAnalysisHistory([]);
       }
-    } else {
-      // Clear history when no user is logged in
-      setAnalysisHistory([]);
-    }
-  }, [user]);
+  }, []);
 
-  // Persist history to localStorage whenever it changes for the logged-in user
+  // Persist history to localStorage whenever it changes
   useEffect(() => {
-    if (user && analysisHistory.length > 0) {
-      localStorage.setItem(`analysis_history_${user.email}`, JSON.stringify(analysisHistory));
+    if (analysisHistory.length > 0) {
+      localStorage.setItem('analysis_history', JSON.stringify(analysisHistory));
+    } else {
+      localStorage.removeItem('analysis_history');
     }
-     else if (user && analysisHistory.length === 0) {
-      // If user deletes all history, remove the key from storage
-      localStorage.removeItem(`analysis_history_${user.email}`);
-    }
-  }, [analysisHistory, user]);
-
-  const handleLogout = () => {
-    localStorage.removeItem('app_currentUser');
-    setUser(null);
-    handleNewInsight();
-  };
-  
-  const handleAuthSuccess = (authedUser: User) => {
-    setUser(authedUser);
-  };
+  }, [analysisHistory]);
   
   const toggleSidebar = () => {
     setIsSidebarOpen(prev => !prev);
@@ -709,17 +444,8 @@ const App: React.FC = () => {
   
   const componentsToRender = insights?.layout.flatMap(row => row.cells);
 
-  if (!user) {
-    return <Auth onAuthSuccess={handleAuthSuccess} />;
-  }
-
   return (
     <div className="bg-background min-h-screen text-text">
-      <SettingsModal 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)}
-        user={user}
-      />
       <ShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
@@ -735,9 +461,6 @@ const App: React.FC = () => {
         onRenameHistory={handleRenameHistory}
         isOpen={isSidebarOpen}
         onToggle={toggleSidebar}
-        user={user}
-        onLogout={handleLogout}
-        onOpenSettings={() => setIsSettingsOpen(true)}
       />
       <div className={`flex flex-col min-h-screen transition-all duration-300 ease-in-out ${isSidebarOpen ? 'lg:ml-[260px]' : 'lg:ml-16'}`}>
         <Header 
