@@ -4,8 +4,6 @@ const cors = require('cors');
 const bcrypt = require('bcrypt');
 
 const app = express();
-// Vercel fornecerá a variável de ambiente PORT. Fallback para 3001 para desenvolvimento local.
-const port = process.env.PORT || 3001;
 const saltRounds = 10;
 
 // Middleware
@@ -15,6 +13,9 @@ app.use(express.json());
 // Uma função assíncrona auto-invocável para garantir que a tabela exista.
 (async () => {
     try {
+        // Nota: A criação da tabela é melhor feita fora do código da função
+        // em um script de migração, mas para simplicidade, mantemos aqui.
+        // A Vercel executa este código em cada invocação da função.
         await sql`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -23,9 +24,10 @@ app.use(express.json());
                 password_hash TEXT NOT NULL
             );
         `;
-        console.log('Tabela "users" está pronta.');
+        console.log('Verificação da tabela "users" concluída.');
     } catch (error) {
-        console.error('Erro ao criar tabela de usuários:', error);
+        // Não bloqueia a execução se a tabela já existir ou houver um erro de conexão inicial.
+        console.error('Erro ao verificar/criar tabela de usuários:', error);
     }
 })();
 
@@ -96,7 +98,5 @@ app.post('/api/login', async (req, res) => {
 });
 
 
-// Inicia o servidor
-app.listen(port, () => {
-    console.log(`Servidor backend rodando na porta ${port}`);
-});
+// Exporta o app para a Vercel em vez de iniciar um servidor local
+module.exports = app;
