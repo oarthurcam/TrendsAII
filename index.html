@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TrendsBI</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+      :root {
+        --color-primary: #3b82f6;
+        --color-background: #f7f8fa;
+        --color-card: #ffffff;
+        --color-text: #111827;
+        --color-text-secondary: #6b7280;
+        --color-border: #e5e7eb;
+        --color-sidebar: #ffffff;
+      }
+      .dark {
+        --color-primary: #3b82f6; /* Changed from a light blue to a stronger one */
+        --color-background: #0f172a;
+        --color-card: #1e293b;
+        --color-text: #f8fafc;
+        --color-text-secondary: #94a3b8;
+        --color-border: #334155;
+        --color-sidebar: #1e293b;
+      }
+      body {
+        background-color: var(--color-background);
+        color: var(--color-text);
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              primary: 'var(--color-primary)',
+              background: "var(--color-background)",
+              card: "var(--color-card)",
+              text: "var(--color-text)",
+              "text-secondary": "var(--color-text-secondary)",
+              border: "var(--color-border)",
+              sidebar: "var(--color-sidebar)"
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            borderRadius: {
+              'lg': '0.75rem',
+              'xl': '1rem'
+            },
+            keyframes: {
+              'fade-in-down': {
+                '0%': {
+                  opacity: '0',
+                  transform: 'translateY(-10px)'
+                },
+                '100%': {
+                  opacity: '1',
+                  transform: 'translateY(0)'
+                },
+              },
+              'fade-in-up': {
+                '0%': {
+                  opacity: '0',
+                  transform: 'translateY(10px)'
+                },
+                '100%': {
+                  opacity: '1',
+                  transform: 'translateY(0)'
+                },
+              },
+              'fade-in': {
+                '0%': { opacity: '0' },
+                '100%': { opacity: '1' },
+              }
+            },
+            animation: {
+              'fade-in-down': 'fade-in-down 0.2s ease-out',
+              'fade-in-up': 'fade-in-up 0.2s ease-out',
+              'fade-in': 'fade-in 0.2s ease-out'
+            }
+          },
+        },
+      };
+    </script>
+    <script type="importmap">
+      {
+        "imports": {
+          "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
+          "react/": "https://aistudiocdn.com/react@^19.1.1/",
+          "react": "https://aistudiocdn.com/react@^19.1.1",
+          "@google/genai": "https://aistudiocdn.com/@google/genai@^1.20.0",
+          "recharts": "https://aistudiocdn.com/recharts@^2.12.7"
+        }
+      }
+    </script>
+  </head>
+  <body class="font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
