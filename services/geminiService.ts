@@ -89,6 +89,55 @@ const cleanJsonString = (str: string): string => {
     return str.replace(/```json/g, '').replace(/```/g, '').trim();
 };
 
+// --- TEXT CORRECTION UTILITIES ---
+
+const fixTypography = (text: string): string => {
+    if (!text) return text;
+    let corrected = text;
+
+    // 1. Remove double spaces
+    corrected = corrected.replace(/\s+/g, ' ');
+
+    // 2. Fix spaces before punctuation (e.g. "word ." -> "word.")
+    corrected = corrected.replace(/\s+([.,;:?!])/g, '$1');
+
+    // 3. Ensure space after punctuation (e.g. "word.Word" -> "word. Word"), avoiding decimals (10.5)
+    corrected = corrected.replace(/([.,;:?!])(?=[A-Za-zÀ-ÿ])/g, '$1 ');
+
+    // 4. Fix currency formatting spacing (e.g. "R$ 10,00" -> "R$ 10,00" - keep as is, but ensure consistency)
+    // Sometimes AI puts "R$10", standardizing to "R$ 10" looks better or keeping as is if intended.
+    // Let's ensure standard currency spacing for BRL
+    corrected = corrected.replace(/R\$(\d)/g, 'R$ $1');
+
+    // 5. Capitalize first letter of the string
+    corrected = corrected.charAt(0).toUpperCase() + corrected.slice(1);
+
+    return corrected.trim();
+};
+
+// Recursive function to apply corrections to all string fields in an object
+const applyTextCorrections = (obj: any): any => {
+    if (typeof obj === 'string') {
+        return fixTypography(obj);
+    } else if (Array.isArray(obj)) {
+        return obj.map(item => applyTextCorrections(item));
+    } else if (typeof obj === 'object' && obj !== null) {
+        const newObj: any = {};
+        for (const key in obj) {
+            // Skip keys that are strictly code identifiers if needed, but usually titles/desc need fixing
+            if (key === 'type' || key === 'id' || key === 'x_axis_column' || key === 'y_axis_columns' || key === 'value_column' || key === 'category_column') {
+                newObj[key] = obj[key];
+            } else {
+                newObj[key] = applyTextCorrections(obj[key]);
+            }
+        }
+        return newObj;
+    }
+    return obj;
+};
+
+// ---------------------------------
+
 // Utility to extract headers
 const getCsvHeaders = (csvData: string): string[] => {
     const firstLine = csvData.split('\n')[0];
@@ -98,50 +147,41 @@ const getCsvHeaders = (csvData: string): string[] => {
 
 const generateInsights = async (csvData: string): Promise<AnalysisResult> => {
     const model = 'gemini-2.5-flash';
-    // Truncate CSV more aggressively to prevent truncation of output
-    const truncatedCsv = csvData.slice(0, 40000);
+    // Truncate CSV to prevent token overflow, but keep enough for context
+    const truncatedCsv = csvData.slice(0, 35000); 
     const validHeaders = getCsvHeaders(csvData);
 
     const prompt = `
-        Você é um **Data Storyteller** moderno e um **Editor Visual** meticuloso 🚀. 
-        Sua missão é analisar os dados CSV e contar a história por trás dos números com uma estrutura impecável.
+        Atue como um **Analista de Dados Sênior** e **Editor Chefe**. 🧐
+        Sua missão é analisar os dados CSV fornecidos e gerar um relatório de insights **extremamente preciso, factual e gramaticalmente perfeito**.
 
-        **Diretrizes de Linguagem (CRÍTICO):**
-        - Escreva em **Português do Brasil (pt-BR)** impecável.
-        - **Revise sua própria escrita**: Evite erros de digitação.
-        - Use frases claras e diretas.
+        **REGRAS DE OURO PARA PRECISÃO (CRÍTICO):**
+        1.  **Fidelidade aos Dados:** Baseie-se APENAS nos dados fornecidos. Não invente números, datas ou conclusões.
+        2.  **Validação de Colunas:** Ao criar gráficos, use **ESTRITAMENTE** os nomes das colunas listados abaixo.
+        3.  **Português Impecável:** Escreva em Português do Brasil formal.
+        4.  **Revisão Final:** Antes de gerar o JSON, releia seus textos. Corrija erros de concordância, regência e digitação.
 
-        **VALIDAÇÃO DE DADOS (CRÍTICO):**
-        Abaixo estão as colunas EXATAS disponíveis neste arquivo.
         **LISTA DE COLUNAS VÁLIDAS:** [${validHeaders.join(', ')}]
-        ⚠️ **REGRA:** Ao criar gráficos, você deve usar APENAS nomes desta lista para 'x_axis_column', 'y_axis_columns', 'category_column' e 'value_column'. Não invente colunas como "Vendas", "Total" ou "Data" se elas não estiverem na lista acima.
 
-        **Diretrizes de Formatação Visual (MUITO IMPORTANTE):**
-        1.  **Estrutura:** Use Markdown (\`###\`) para subtítulos dentro dos resumos.
-        2.  **Escaneabilidade:** Parágrafos CURTOS (máximo 2 linhas).
-        3.  **Listas:** Sempre use bullet points (\`-\`).
-        4.  **Números:** Formate valores decimais com no máximo 2 casas (ex: 10.55, 12.00%, R$ 50.20).
+        **Diretrizes de Formatação Visual:**
+        1.  **Estrutura:** Use Markdown (\`###\`) para subtítulos claros nos resumos.
+        2.  **Conciso:** Vá direto ao ponto.
+        3.  **Listas:** Use bullet points (\`-\`) para facilitar a leitura.
+        4.  **Numeração:** Formate valores decimais com no máximo 2 casas (ex: 10.55, 12.00%, R$ 50.20).
 
-        **REGRAS CRÍTICAS DE CONCISÃO (PARA NÃO QUEBRAR O JSON):**
-        ⚠️ **MUITO IMPORTANTE:** O output JSON tem um limite de tamanho.
-        - **Resumos (summary):** MÁXIMO 350 caracteres. Seja direto.
-        - **Listas (list):** MÁXIMO 5 itens por lista.
-        - **Geral:** Priorize qualidade sobre quantidade.
-
-        **Visualizações (Charts) - REGRA DE CARDINALIDADE:**
-        - **Colunas com muitos valores únicos (ex: Produtos, Cidades):**
-          - INSTRUÇÃO OBRIGATÓRIA: Configure o gráfico para mostrar apenas os **Top 10** (para barras) ou **Top 5** (para pizza).
-          - Defina o título do gráfico para refletir isso (ex: "Top 5 Produtos por Venda" ou "10 Maiores Clientes").
-        - **Tipos de Gráfico:**
-          - Use \`HORIZONTAL_BAR\` para rankings (ex: Top Vendedores).
-          - Use \`PIE\` ou \`DONUT\` *apenas* se houver poucas categorias (max 5).
+        **Visualizações (Charts) - INSTRUÇÕES TÉCNICAS:**
+        - **Muitos dados?** Se uma coluna tiver muitos valores únicos (ex: > 10 produtos), configure o gráfico para focar nos "Top 10".
+        - **Tipos:**
+          - \`HORIZONTAL_BAR\`: Ideal para rankings (ex: Top Vendedores).
+          - \`LINE\`: Apenas para séries temporais (Datas no eixo X).
+          - \`PIE/DONUT\`: Apenas para poucas categorias (max 5).
 
         **Estrutura do Relatório (JSON):**
-        1.  **Título Impactante:** Ex: "🚀 Performance de Vendas Q3".
-        2.  **Resumo Executivo (summary):** Texto curto e estruturado.
-        3.  **KPIs (kpi_grid):** 3 a 6 números vitais (Arredonde floats para 2 casas).
-        4.  **Destaques (list):** "🔥 Top 5 Destaques" ou "⚠️ Riscos".
-        5.  **Visualizações (chart):** 2 a 3 gráficos essenciais.
+        1.  **Título Profissional:** Ex: "Relatório de Performance - Q3".
+        2.  **Resumo Executivo (summary):** Análise textual de alto nível.
+        3.  **KPIs (kpi_grid):** 3 a 6 métricas chave (Total, Média, Máximo).
+        4.  **Destaques (list):** Lista de pontos de atenção ou oportunidades.
+        5.  **Visualizações (chart):** 2 a 3 gráficos essenciais para visualizar tendências.
 
         **Dados CSV:**
         ---
@@ -206,12 +246,13 @@ const generateInsights = async (csvData: string): Promise<AnalysisResult> => {
             config: {
                 responseMimeType: "application/json",
                 responseSchema: responseSchema,
-                temperature: 0.2, 
+                temperature: 0.1, 
             },
         });
         
         const jsonString = cleanJsonString(response.text);
-        return JSON.parse(jsonString) as AnalysisResult;
+        const parsed = JSON.parse(jsonString);
+        return applyTextCorrections(parsed) as AnalysisResult;
     } catch (error) {
         console.error("Gemini API Error in generateInsights:", error);
         throw new Error("Erro ao gerar insights. A resposta foi cortada ou os dados são muito complexos. Tente um arquivo menor.");
@@ -223,40 +264,29 @@ export const analyzeDocument = async (base64Data: string, mimeType: string): Pro
     
     // Prompt focado em análise qualitativa, extração e organização inteligente
     const prompt = `
-    Aja como um **Consultor de Negócios Sênior** e um **Especialista em Comunicação Visual**.
+    Atue como um **Auditor de Documentos Sênior**.
     
-    Analise este documento e gere um **Diagnóstico Estratégico** visualmente organizado.
+    **MISSÃO:** Analisar o documento anexo e extrair informações com **precisão cirúrgica** e **português impecável**.
 
-    **📍 Regra de Ouro da Formatação (Visual Clean):**
-    - Todo texto gerado no campo \`textContent\` DEVE usar Markdown para estrutura.
-    - Use **Títulos (###)** para separar ideias.
-    - Use **Listas (-)** para enumerar pontos.
-    - Use **Negrito** para ênfase.
-    - Pule linhas entre parágrafos para dar "respiro" ao texto.
-    - **Português Correto:** Escreva sem erros gramaticais ou de digitação.
-    - **CONCISÃO:** Seja direto. Evite textos longos que possam quebrar a resposta.
-    - **KPIs/Números:** Se encontrar métricas, formate com no máximo 2 casas decimais (ex: 15.50%).
+    **REGRAS DE QUALIDADE:**
+    1.  **Não Alucine:** Se a informação não consta no documento, não a invente.
+    2.  **Correção:** Revise a ortografia e gramática do texto gerado antes de finalizar.
+    3.  **Estrutura:** Use Markdown para organizar o texto visualmente.
+    4.  **Sintese:** Seja conciso.
 
-    **1. Contexto:**
-    Identifique o tipo de doc (Contrato, Relatório, Slide). Adapte o tom.
+    **Estrutura de Saída (JSON):**
 
-    **2. Estrutura de Saída (JSON):**
+    *   **SEÇÃO 1: Resumo Executivo**
+        *   Resumo claro do conteúdo (Max 500 caracteres).
+    
+    *   **SEÇÃO 2: Destaques Chave**
+        *   Extraia números ou pontos principais em formato de KPIs ou Lista.
 
-    *   **SEÇÃO 1: Resumo Inteligente (Smart Summary)**
-        *   Resumo executivo de alto nível (Max 500 caracteres).
-        *   Estruture com subtítulos se o texto for longo. (ex: ### Objetivo, ### Conclusão).
+    *   **SEÇÃO 3: Riscos e Recomendações**
+        *   Identifique pontos de atenção ou próximos passos sugeridos pelo documento.
 
-    *   **SEÇÃO 2: Destaques (Grid de KPIs ou Texto)**
-        *   Se houver números: \`kpi_grid\`.
-        *   Se for texto: Crie uma seção de destaques.
-
-    *   **SEÇÃO 3: Análise de Riscos e Oportunidades**
-        *   Lista de **⚠️ Pontos de Atenção** (Max 5 itens).
-        *   Lista de **🚀 Recomendações** (Max 5 itens).
-
-    *   **SEÇÃO 4: Tendências (Texto ou Gráfico)**
-        *   Identifique padrões.
-        *   Se houver tabela, tente gerar gráfico. Se não, texto estruturado.
+    *   **SEÇÃO 4: Análise Adicional**
+        *   Identifique tendências ou padrões se houver.
 
     Gere a resposta estritamente no formato JSON definido pelo schema.
     `;
@@ -324,12 +354,13 @@ export const analyzeDocument = async (base64Data: string, mimeType: string): Pro
             config: {
                 responseMimeType: "application/json",
                 responseSchema: responseSchema,
-                temperature: 0.2, // Precision mode
+                temperature: 0.1, // Precision mode
             },
         });
 
         const jsonString = cleanJsonString(response.text);
-        return JSON.parse(jsonString) as AnalysisResult;
+        const parsed = JSON.parse(jsonString);
+        return applyTextCorrections(parsed) as AnalysisResult;
 
     } catch (error) {
         console.error("Gemini API Error in analyzeDocument:", error);
@@ -340,35 +371,29 @@ export const analyzeDocument = async (base64Data: string, mimeType: string): Pro
 const generateDashboard = async (csvData: string): Promise<DashboardAnalysisResult> => {
     const model = 'gemini-2.5-flash';
     // Truncate CSV for Dashboard as well
-    const truncatedCsv = csvData.slice(0, 50000);
+    const truncatedCsv = csvData.slice(0, 45000);
     const validHeaders = getCsvHeaders(csvData);
 
     const prompt = `
-        Você é um especialista em visualização de dados e Business Intelligence 📊.
+        Atue como um **Engenheiro de Analytics Sênior**. 📊
         
-        **Personalidade:**
-        Moderno, focado em métricas de negócio. Use emojis nos títulos dos KPIs para dar contexto (💰, 👥, ⏱️).
+        **OBJETIVO:** Transformar os dados CSV brutos em um Dashboard executivo de alta precisão.
 
-        **Qualidade do Texto:**
-        Garanta que todos os títulos e textos estejam em português correto, sem erros de digitação.
-        
-        **Formatação Numérica (IMPORTANTE):**
-        - Arredonde todos os valores numéricos decimais para 2 casas (ex: 12.34).
-        - Mantenha a moeda ou símbolo (ex: R$ 12,34 ou 15%).
+        **REGRAS DE INTEGRIDADE DE DADOS E CORREÇÃO:**
+        1. **Mapeamento de Colunas:** Use **EXATAMENTE** e **APENAS** os nomes das colunas listados abaixo.
+           **COLUNAS DISPONÍVEIS:** [${validHeaders.join(', ')}]
+           
+        2. **Tipagem:**
+           - Para Eixo Y (Valores), escolha apenas colunas numéricas.
+           - Para Eixo X (Categorias), escolha colunas descritivas.
 
-        **VALIDAÇÃO DE DADOS (RIGOROSA):**
-        **Colunas Disponíveis:** [${validHeaders.join(', ')}]
-        ⚠️ **REGRA:** Use EXATAMENTE os nomes da lista acima para as configurações dos gráficos. Não invente nomes. Se precisar de uma métrica que não existe, escolha uma coluna numérica disponível.
+        3. **Texto e Ortografia:**
+           - Revise os títulos e subtítulos para garantir Português correto.
+           - Evite abreviações obscuras.
 
-        **Regras de Gráficos (CARDINALIDADE):**
-        - Se uma categoria (ex: Produto) tiver muitos itens, foque automaticamente no **Top 10** (para barras) ou **Top 5** (para pizza).
-        - Título deve refletir isso (ex: "Top 5 Produtos por Faturamento").
-
-        Instruções:
-        1.  **Título do Dashboard**: Conciso e profissional.
-        2.  **KPIs**: 3 métricas de alto nível.
-        3.  **Gráficos**: 6 gráficos variados.
-        4.  **Mapeamento de Colunas**: Use EXATAMENTE os nomes das colunas do CSV fornecido.
+        **Regras de Visualização:**
+        - **Cardinalidade:** Se uma categoria tiver > 10 itens, o título do gráfico deve indicar "Top 10" ou "Principais".
+        - **KPIs:** Gere métricas agregadas (Soma, Média) que realmente façam sentido para o negócio.
 
         Dados CSV:
         ---
@@ -428,11 +453,12 @@ const generateDashboard = async (csvData: string): Promise<DashboardAnalysisResu
         config: {
           responseMimeType: "application/json",
           responseSchema,
-          temperature: 0.2,
+          temperature: 0.1, // High precision
         },
     });
     const jsonString = cleanJsonString(response.text);
-    return JSON.parse(jsonString) as DashboardAnalysisResult;
+    const parsed = JSON.parse(jsonString);
+    return applyTextCorrections(parsed) as DashboardAnalysisResult;
 }
 
 export const chatWithData = async (userMessage: string, context: { type: 'csv' | 'document', data: string, mimeType?: string }): Promise<string> => {
@@ -442,42 +468,35 @@ export const chatWithData = async (userMessage: string, context: { type: 'csv' |
     let contents: any[] = [];
 
     const basePrompt = `
-        Você é um **Assistente de Dados Conciso e Direto** 🤖.
+        Você é um **Assistente de Dados Analítico** 🤖.
         
-        **REGRA DE OURO: SEJA BREVE E GRAMATICALMENTE CORRETO.**
-        O usuário deseja respostas rápidas e objetivas.
+        **OBJETIVO:** Responder à pergunta do usuário com base ESTRITAMENTE nos dados fornecidos.
+
+        **REGRAS DE RESPOSTA:**
+        1. **Fidelidade:** Não invente informações.
+        2. **Conciso:** Responda de forma direta.
+        3. **Português:** Use Português do Brasil correto. Revise sua resposta antes de enviar.
+        4. **Formatação:** Use **negrito** para destacar os números ou conclusões mais importantes.
         
-        **Diretrizes:**
-        1. **Tamanho:** Máximo de 2 a 3 parágrafos curtos. Se possível, responda em uma frase.
-        2. **Estilo:** Vá direto ao ponto. Não use introduções como "Com base nos dados..." ou "Analisando o arquivo...".
-        3. **Formatação:** Use **negrito** para destacar números e conclusões chave. Use listas (\`-\`) curtas apenas se necessário.
-        4. **Foco:** Responda EXCLUSIVAMENTE ao que foi perguntado, usando os dados fornecidos.
-        5. **Escrita:** Verifique se não há palavras escritas erradas ou letras duplicadas antes de responder.
-        6. **Números:** Arredonde valores quebrados para 2 casas decimais.
+        **Pergunta do Usuário:**
+        "${userMessage}"
     `;
 
     if (context.type === 'csv') {
-        // Truncate CSV for Chat to maintain conversation flow speed
         const truncatedCsv = context.data.slice(0, 40000);
         const validHeaders = getCsvHeaders(context.data);
 
         prompt = `
             ${basePrompt}
 
-            **Contexto (Dados CSV):**
+            **CONTEXTO (DADOS CSV):**
             ---
             ${truncatedCsv}
             ---
 
-            **VALIDAÇÃO DE COLUNAS:**
-            Use apenas estas colunas ao gerar gráficos: [${validHeaders.join(', ')}].
-
-            **Instruções Específicas:**
-            - Se o usuário pedir um gráfico, gere o JSON no formato: \`<chart_json>{"title": "...", "type": "BAR|LINE|PIE", "x_axis_column": "ExactColName", "y_axis_column": "ExactColName"}</chart_json>\`.
-            - Use nomes de colunas exatos.
-
-            **Pergunta:**
-            "${userMessage}"
+            **SOLICITAÇÃO DE GRÁFICOS:**
+            - Se o usuário pedir um gráfico, gere um JSON no formato: \`<chart_json>{"title": "...", "type": "BAR|LINE|PIE", "x_axis_column": "COLUNA_EXATA", "y_axis_column": "COLUNA_EXATA"}</chart_json>\`.
+            - ⚠️ **IMPORTANTE:** Use APENAS estes nomes de colunas: [${validHeaders.join(', ')}].
         `;
         contents = [{ text: prompt }];
 
@@ -486,12 +505,9 @@ export const chatWithData = async (userMessage: string, context: { type: 'csv' |
         prompt = `
             ${basePrompt}
 
-            **Instruções Específicas para Documentos:**
-            - Resuma ou responda de forma ultra-resumida.
-            - Extraia apenas a informação essencial solicitada.
-
-            **Pergunta:**
-            "${userMessage}"
+            **Instruções para Documentos:**
+            - Analise o documento anexo para encontrar a resposta.
+            - Seja breve. Responda apenas o que foi perguntado.
         `;
         
         contents = [
@@ -509,11 +525,12 @@ export const chatWithData = async (userMessage: string, context: { type: 'csv' |
         model,
         contents: contents,
         config: {
-            temperature: 0.2, // Low for correctness
+            temperature: 0.1, // Low for correctness
         }
     });
     
-    return response.text;
+    // Apply correction to the chat response text as well
+    return fixTypography(response.text);
 };
 
 
@@ -523,25 +540,17 @@ export const generateSmartAnalysis = async (csvData: string): Promise<SmartAnaly
     const validHeaders = getCsvHeaders(csvData);
 
     const prompt = `
-        Você é uma IA de BI Avançada 🧠. Analise os dados e gere uma Análise Estratégica.
+        Atue como uma **IA de BI de Alta Precisão** 🧠.
+        Analise os dados e gere uma análise estratégica factual.
 
-        **Instruções de Estilo:**
-        - **Sem Jargões Vazios:** Seja direto.
-        - **Português Perfeito:** Cuidado extremo com erros de ortografia.
-        - **Formatação Markdown:** Nos textos de resumo ('summary'), use \`###\` para subtítulos, bullet points e negrito para organizar as ideias. O texto deve ser visualmente limpo e escaneável.
-        - **CONCISÃO:** Mantenha os textos dos resumos (simple, intermediate, advanced) com no máximo 500 caracteres cada.
-        - **NÚMEROS:** Todo valor float deve ter no máximo 2 casas decimais (Ex: 10.45, 99.99%).
+        **REGRAS DE QUALIDADE:**
+        1. **Fatos:** Apenas fatos contidos no CSV. Sem alucinações.
+        2. **Ortografia:** Português do Brasil perfeito. Revise erros gramaticais.
+        3. **Clareza:** Textos concisos, organizados com Markdown.
+        4. **Precisão Numérica:** Arredonde valores para 2 casas decimais.
 
-        **Dados CSV:**
-        ${truncatedCsv}
-        
-        **VALIDAÇÃO:** Use apenas colunas que existem no CSV: [${validHeaders.join(', ')}].
+        **COLUNAS VÁLIDAS:** [${validHeaders.join(', ')}]
 
-        **Multinível:**
-        - **Simples:** Linguagem coloquial, tópicos curtos.
-        - **Intermediário:** Foco em KPIs.
-        - **Avançado:** Detalhes técnicos.
-        
         **Formato de Saída (JSON):**
         Siga rigorosamente o schema fornecido.
     `;
@@ -615,12 +624,13 @@ export const generateSmartAnalysis = async (csvData: string): Promise<SmartAnaly
             config: {
                 responseMimeType: "application/json",
                 responseSchema: responseSchema,
-                temperature: 0.2,
+                temperature: 0.1,
             },
         });
 
         const jsonString = cleanJsonString(response.text);
-        return JSON.parse(jsonString) as SmartAnalysisResult;
+        const parsed = JSON.parse(jsonString);
+        return applyTextCorrections(parsed) as SmartAnalysisResult;
 
     } catch (error) {
         console.error("Smart Analysis Error:", error);
