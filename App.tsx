@@ -8,6 +8,7 @@ import { DashboardDisplay } from './components/DashboardDisplay';
 import { InsightsDisplay } from './components/InsightsDisplay';
 import { ChatSidebar, Message } from './components/ChatSidebar';
 import { LoadingState } from './components/LoadingState';
+import { EditCardModal } from './components/EditCardModal';
 
 // TypeScript declaration for the libraries loaded from CDN
 declare const XLSX: any;
@@ -235,6 +236,12 @@ const fileToBase64 = (file: File): Promise<string> => {
 const INSIGHTS_EXTENSIONS = ['.xlsx', '.xls', '.csv', '.pdf', '.docx', '.doc', '.txt', '.pptx', '.ppt', '.odt'];
 const DASHBOARD_EXTENSIONS = ['.xlsx', '.xls', '.csv'];
 
+interface EditingItemState {
+    type: 'kpi' | 'chart';
+    data: any; // The KPI object or Chart Config object
+    path: string; // Identifier path to locate object in state (e.g., 'kpis.0' or 'sections.2')
+}
+
 const App: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -251,6 +258,10 @@ const App: React.FC = () => {
   
   // New state for Chat Sidebar
   const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
+  
+  // Edit Mode States
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingItem, setEditingItem] = useState<EditingItemState | null>(null);
   
   const dashboardRef = useRef<HTMLDivElement>(null);
 
@@ -303,6 +314,7 @@ const App: React.FC = () => {
     setError(null);
     setFileName(null);
     setActiveHistoryId(null);
+    setIsEditMode(false);
   };
 
   const handleNewInsight = () => {
@@ -326,6 +338,7 @@ const App: React.FC = () => {
       setIsLoading(false);
       setActiveHistoryId(id);
       setActiveView(selected.type); // Switch view to match the selected history item
+      setIsEditMode(false);
     }
   };
   
@@ -360,6 +373,90 @@ const App: React.FC = () => {
             )
         );
     };
+
+  // --- EDIT MODE HANDLERS ---
+
+  const handleDeleteItem = (path: string) => {
+    if (!insights) return;
+
+    const newInsights = JSON.parse(JSON.stringify(insights));
+    const parts = path.split('.');
+    
+    // Logic for Dashboard View (Legacy)
+    if (activeView === 'dashboards' && 'kpis' in newInsights) {
+        if (parts[0] === 'kpis') {
+            const index = parseInt(parts[1], 10);
+            newInsights.kpis.splice(index, 1);
+        } else if (parts[0] === 'charts') {
+            const chartKey = parts[1];
+            // Since charts is an object with fixed keys in the type definition, 
+            // but we want to "remove" it visually, we can set it to null or undefined.
+            // However, the renderer expects valid keys. 
+            // A safer way for this strict type is to filter it out in the display or replace with a placeholder?
+            // For now, let's delete the key. The component checks if chartInfo exists.
+            delete newInsights.charts[chartKey];
+        }
+    } 
+    // Logic for Insights View (Sections)
+    else if ('sections' in newInsights) {
+        if (parts[0] === 'sections') {
+            const index = parseInt(parts[1], 10);
+            newInsights.sections.splice(index, 1);
+        }
+    }
+    
+    setInsights(newInsights);
+    updateHistoryWithInsights(newInsights);
+  };
+
+  const handleEditItem = (path: string, type: 'kpi' | 'chart', data: any) => {
+    setEditingItem({ path, type, data });
+  };
+
+  const handleSaveEdit = (newData: any) => {
+    if (!insights || !editingItem) return;
+
+    const newInsights = JSON.parse(JSON.stringify(insights));
+    const parts = editingItem.path.split('.');
+
+    // Traverse to the object to update
+    let current = newInsights;
+    for (let i = 0; i < parts.length - 1; i++) {
+        current = current[parts[i]];
+    }
+    
+    // Update
+    current[parts[parts.length - 1]] = newData;
+
+    // For chart updates inside sections, we need to ensure config structure
+    if (editingItem.path.includes('sections') && editingItem.type === 'chart') {
+         // The modal saves chart config, we need to make sure it maps back to chartConfig
+         // Actually, if we passed 'section.chartConfig' as data, 'newData' is the new config.
+         // 'current' is the 'sections' array, parts last is index.
+         // Wait, if path is 'sections.0', current[0] is the section object.
+         // We shouldn't replace the section object with chart data.
+         // We should update section.chartConfig.
+         
+         // Let's refine handleEditItem to pass the specific object data but keep path pointing to parent if needed?
+         // Simpler: Just update the specific property.
+         // In handleEditItem call for sections, we pass path 'sections.0.chartConfig'.
+         // Then the logic above works: current is section object, key is 'chartConfig'.
+    }
+
+    setInsights(newInsights);
+    updateHistoryWithInsights(newInsights);
+    setEditingItem(null);
+  };
+
+  const updateHistoryWithInsights = (newInsights: any) => {
+      if (activeHistoryId) {
+          setAnalysisHistory(prev => prev.map(h => 
+              h.id === activeHistoryId ? { ...h, insights: newInsights } : h
+          ));
+      }
+  };
+
+  // --------------------------
 
   const handleFileSelect = (selectedFile: File) => {
     if (selectedFile) {
@@ -396,6 +493,7 @@ const App: React.FC = () => {
     setInsights(null);
     setExcelData(null);
     setActiveHistoryId(null);
+    setIsEditMode(false);
 
     const isSpreadsheet = file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv');
 
@@ -411,6 +509,12 @@ const App: React.FC = () => {
                     try {
                         const data = event.target?.result;
                         const workbook = XLSX.read(data, { type: 'array' });
+                        
+                        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+                             reject(new Error("O arquivo Excel não possui abas visíveis ou está vazio."));
+                             return;
+                        }
+                        
                         const sheetName = workbook.SheetNames[0];
                         const worksheet = workbook.Sheets[sheetName];
                         
@@ -490,6 +594,15 @@ const App: React.FC = () => {
         title={insights?.dashboardTitle}
       />
       
+      <EditCardModal 
+        isOpen={!!editingItem} 
+        onClose={() => setEditingItem(null)} 
+        onSave={handleSaveEdit}
+        item={editingItem?.data}
+        type={editingItem?.type || 'chart'}
+        availableColumns={excelData && excelData.length > 0 ? Object.keys(excelData[0]) : []}
+      />
+
       <ChatSidebar 
         isOpen={isChatSidebarOpen} 
         onClose={() => setIsChatSidebarOpen(false)}
@@ -518,7 +631,9 @@ const App: React.FC = () => {
           onOpenShareModal={() => setIsShareModalOpen(true)}
           onToggleSidebar={toggleSidebar}
           onToggleChat={() => setIsChatSidebarOpen(prev => !prev)}
+          onToggleEditMode={() => setIsEditMode(prev => !prev)}
           isChatOpen={isChatSidebarOpen}
+          isEditMode={isEditMode}
         />
         <main className="flex-grow container mx-auto px-6 py-8 flex flex-col">
           {!showResults ? (
@@ -573,8 +688,21 @@ const App: React.FC = () => {
                 ) : (
                   insights && (
                     isDashboardView ? 
-                    <DashboardDisplay dashboard={insights as DashboardAnalysisResult} data={excelData || []} /> :
-                    <InsightsDisplay insights={insights as AnalysisResult} data={excelData || []} fileName={fileName} />
+                    <DashboardDisplay 
+                        dashboard={insights as DashboardAnalysisResult} 
+                        data={excelData || []} 
+                        isEditMode={isEditMode}
+                        onDelete={handleDeleteItem}
+                        onEdit={handleEditItem}
+                    /> :
+                    <InsightsDisplay 
+                        insights={insights as AnalysisResult} 
+                        data={excelData || []} 
+                        fileName={fileName} 
+                        isEditMode={isEditMode}
+                        onDelete={handleDeleteItem}
+                        onEdit={handleEditItem}
+                    />
                   )
                 )}
               </div>

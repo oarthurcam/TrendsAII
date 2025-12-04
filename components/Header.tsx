@@ -6,10 +6,20 @@ interface HeaderProps {
     onOpenShareModal: () => void;
     onToggleSidebar: () => void;
     onToggleChat: () => void;
+    onToggleEditMode: () => void;
     isChatOpen: boolean;
+    isEditMode: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title, onOpenShareModal, onToggleSidebar, onToggleChat, isChatOpen }) => {
+export const Header: React.FC<HeaderProps> = ({ 
+    title, 
+    onOpenShareModal, 
+    onToggleSidebar, 
+    onToggleChat, 
+    onToggleEditMode,
+    isChatOpen,
+    isEditMode
+}) => {
     const [isHelpOpen, setIsHelpOpen] = useState(false);
     const helpPopoverRef = useRef<HTMLDivElement>(null);
     const helpButtonRef = useRef<HTMLButtonElement>(null);
@@ -65,6 +75,13 @@ export const Header: React.FC<HeaderProps> = ({ title, onOpenShareModal, onToggl
                     </button>
                     {title ? (
                         <div className="flex items-center gap-2">
+                             <button
+                                onClick={onToggleEditMode}
+                                className={`p-2 rounded-full transition-colors ${isEditMode ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 ring-2 ring-amber-500/50' : 'text-text-secondary hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-text'}`}
+                                title={isEditMode ? "Sair do modo de edição" : "Editar Dashboard"}
+                            >
+                                <span className="material-icons">edit</span>
+                            </button>
                              <button
                                 onClick={onToggleChat}
                                 className={`p-2 rounded-full transition-colors ${isChatOpen ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-text'}`}

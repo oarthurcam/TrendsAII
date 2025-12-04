@@ -89,10 +89,18 @@ const cleanJsonString = (str: string): string => {
     return str.replace(/```json/g, '').replace(/```/g, '').trim();
 };
 
+// Utility to extract headers
+const getCsvHeaders = (csvData: string): string[] => {
+    const firstLine = csvData.split('\n')[0];
+    if (!firstLine) return [];
+    return firstLine.split(',').map(h => h.trim());
+};
+
 const generateInsights = async (csvData: string): Promise<AnalysisResult> => {
     const model = 'gemini-2.5-flash';
     // Truncate CSV more aggressively to prevent truncation of output
     const truncatedCsv = csvData.slice(0, 40000);
+    const validHeaders = getCsvHeaders(csvData);
 
     const prompt = `
         Você é um **Data Storyteller** moderno e um **Editor Visual** meticuloso 🚀. 
@@ -102,6 +110,11 @@ const generateInsights = async (csvData: string): Promise<AnalysisResult> => {
         - Escreva em **Português do Brasil (pt-BR)** impecável.
         - **Revise sua própria escrita**: Evite erros de digitação.
         - Use frases claras e diretas.
+
+        **VALIDAÇÃO DE DADOS (CRÍTICO):**
+        Abaixo estão as colunas EXATAS disponíveis neste arquivo.
+        **LISTA DE COLUNAS VÁLIDAS:** [${validHeaders.join(', ')}]
+        ⚠️ **REGRA:** Ao criar gráficos, você deve usar APENAS nomes desta lista para 'x_axis_column', 'y_axis_columns', 'category_column' e 'value_column'. Não invente colunas como "Vendas", "Total" ou "Data" se elas não estiverem na lista acima.
 
         **Diretrizes de Formatação Visual (MUITO IMPORTANTE):**
         1.  **Estrutura:** Use Markdown (\`###\`) para subtítulos dentro dos resumos.
@@ -115,21 +128,20 @@ const generateInsights = async (csvData: string): Promise<AnalysisResult> => {
         - **Listas (list):** MÁXIMO 5 itens por lista.
         - **Geral:** Priorize qualidade sobre quantidade.
 
-        **Personalidade:**
-        - Use emojis com moderação para destacar (ex: 📈, ⚠️, 💰).
-        - Seja direto, evite "corporativês".
-
-        **REGRAS CRÍTICAS (Lista Negra):**
-        ⛔ **PROIBIDO:** Gráficos de "Distribuição de X" ou "Proporção de Y" baseados apenas em contagem.
-        ⛔ **PROIBIDO:** Gráficos óbvios.
-        ⛔ **PROIBIDO:** Listas longas (> 5 itens).
+        **Visualizações (Charts) - REGRA DE CARDINALIDADE:**
+        - **Colunas com muitos valores únicos (ex: Produtos, Cidades):**
+          - INSTRUÇÃO OBRIGATÓRIA: Configure o gráfico para mostrar apenas os **Top 10** (para barras) ou **Top 5** (para pizza).
+          - Defina o título do gráfico para refletir isso (ex: "Top 5 Produtos por Venda" ou "10 Maiores Clientes").
+        - **Tipos de Gráfico:**
+          - Use \`HORIZONTAL_BAR\` para rankings (ex: Top Vendedores).
+          - Use \`PIE\` ou \`DONUT\` *apenas* se houver poucas categorias (max 5).
 
         **Estrutura do Relatório (JSON):**
         1.  **Título Impactante:** Ex: "🚀 Performance de Vendas Q3".
         2.  **Resumo Executivo (summary):** Texto curto e estruturado.
         3.  **KPIs (kpi_grid):** 3 a 6 números vitais (Arredonde floats para 2 casas).
         4.  **Destaques (list):** "🔥 Top 5 Destaques" ou "⚠️ Riscos".
-        5.  **Visualizações (chart):** Use \`HORIZONTAL_BAR\` para rankings, \`LINE\` para tendências. Copie EXATAMENTE o nome do cabeçalho do CSV.
+        5.  **Visualizações (chart):** 2 a 3 gráficos essenciais.
 
         **Dados CSV:**
         ---
@@ -329,6 +341,7 @@ const generateDashboard = async (csvData: string): Promise<DashboardAnalysisResu
     const model = 'gemini-2.5-flash';
     // Truncate CSV for Dashboard as well
     const truncatedCsv = csvData.slice(0, 50000);
+    const validHeaders = getCsvHeaders(csvData);
 
     const prompt = `
         Você é um especialista em visualização de dados e Business Intelligence 📊.
@@ -342,6 +355,14 @@ const generateDashboard = async (csvData: string): Promise<DashboardAnalysisResu
         **Formatação Numérica (IMPORTANTE):**
         - Arredonde todos os valores numéricos decimais para 2 casas (ex: 12.34).
         - Mantenha a moeda ou símbolo (ex: R$ 12,34 ou 15%).
+
+        **VALIDAÇÃO DE DADOS (RIGOROSA):**
+        **Colunas Disponíveis:** [${validHeaders.join(', ')}]
+        ⚠️ **REGRA:** Use EXATAMENTE os nomes da lista acima para as configurações dos gráficos. Não invente nomes. Se precisar de uma métrica que não existe, escolha uma coluna numérica disponível.
+
+        **Regras de Gráficos (CARDINALIDADE):**
+        - Se uma categoria (ex: Produto) tiver muitos itens, foque automaticamente no **Top 10** (para barras) ou **Top 5** (para pizza).
+        - Título deve refletir isso (ex: "Top 5 Produtos por Faturamento").
 
         Instruções:
         1.  **Título do Dashboard**: Conciso e profissional.
@@ -438,6 +459,8 @@ export const chatWithData = async (userMessage: string, context: { type: 'csv' |
     if (context.type === 'csv') {
         // Truncate CSV for Chat to maintain conversation flow speed
         const truncatedCsv = context.data.slice(0, 40000);
+        const validHeaders = getCsvHeaders(context.data);
+
         prompt = `
             ${basePrompt}
 
@@ -445,7 +468,10 @@ export const chatWithData = async (userMessage: string, context: { type: 'csv' |
             ---
             ${truncatedCsv}
             ---
-            
+
+            **VALIDAÇÃO DE COLUNAS:**
+            Use apenas estas colunas ao gerar gráficos: [${validHeaders.join(', ')}].
+
             **Instruções Específicas:**
             - Se o usuário pedir um gráfico, gere o JSON no formato: \`<chart_json>{"title": "...", "type": "BAR|LINE|PIE", "x_axis_column": "ExactColName", "y_axis_column": "ExactColName"}</chart_json>\`.
             - Use nomes de colunas exatos.
@@ -494,6 +520,7 @@ export const chatWithData = async (userMessage: string, context: { type: 'csv' |
 export const generateSmartAnalysis = async (csvData: string): Promise<SmartAnalysisResult> => {
     const model = 'gemini-2.5-flash';
     const truncatedCsv = csvData.slice(0, 40000);
+    const validHeaders = getCsvHeaders(csvData);
 
     const prompt = `
         Você é uma IA de BI Avançada 🧠. Analise os dados e gere uma Análise Estratégica.
@@ -507,6 +534,8 @@ export const generateSmartAnalysis = async (csvData: string): Promise<SmartAnaly
 
         **Dados CSV:**
         ${truncatedCsv}
+        
+        **VALIDAÇÃO:** Use apenas colunas que existem no CSV: [${validHeaders.join(', ')}].
 
         **Multinível:**
         - **Simples:** Linguagem coloquial, tópicos curtos.

@@ -3,6 +3,7 @@ import { AnalysisResult, InsightSection, Kpi } from '../services/geminiService';
 import { DataRow } from '../App';
 import { ChartRenderer } from './ChartRenderer';
 import { KpiCard } from './KpiCard';
+import { EditableWrapper } from './EditableWrapper';
 
 const SectionContainer: React.FC<{title: string, icon: string, children: React.ReactNode, className?: string}> = ({title, icon, children, className}) => (
     <div className={`bg-card p-6 rounded-xl shadow-sm h-full flex flex-col ${className}`}>
@@ -150,25 +151,48 @@ interface InsightsDisplayProps {
     insights: AnalysisResult;
     data: DataRow[];
     fileName: string | null;
+    isEditMode: boolean;
+    onDelete: (path: string) => void;
+    onEdit: (path: string, type: 'kpi' | 'chart', data: any) => void;
 }
 
-export const InsightsDisplay: React.FC<InsightsDisplayProps> = ({ insights, data, fileName }) => {
+export const InsightsDisplay: React.FC<InsightsDisplayProps> = ({ insights, data, fileName, isEditMode, onDelete, onEdit }) => {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in pb-8">
-            {insights.sections.map((section) => (
+            {insights.sections.map((section, index) => (
                 <div 
                     key={section.id} 
                     className={section.width === 2 ? 'md:col-span-2' : 'md:col-span-1'}
                 >
-                    <SectionContainer 
-                        title={section.title} 
-                        icon={getIconForType(section.type)}
+                    <EditableWrapper
+                        isEditMode={isEditMode}
+                        onDelete={() => onDelete(`sections.${index}`)}
+                        onEdit={() => {
+                             // Determine what to edit based on type
+                             if (section.type === 'chart') {
+                                 onEdit(`sections.${index}.chartConfig`, 'chart', section.chartConfig);
+                             } else {
+                                 // For now only charts are editable via modal in insights view easily, 
+                                 // unless we make a generic text editor for summary/lists.
+                                 // Let's allow editing charts only for now or map it correctly.
+                                 if (section.type === 'chart') {
+                                     onEdit(`sections.${index}.chartConfig`, 'chart', section.chartConfig);
+                                 } else {
+                                     alert('Edição disponível apenas para gráficos neste momento.');
+                                 }
+                             }
+                        }}
                     >
-                        {section.description && (
-                            <p className="text-xs text-text-secondary mb-4 italic px-2 border-l-2 border-primary/30">{section.description}</p>
-                        )}
-                        {renderSectionContent(section, data)}
-                    </SectionContainer>
+                        <SectionContainer 
+                            title={section.title} 
+                            icon={getIconForType(section.type)}
+                        >
+                            {section.description && (
+                                <p className="text-xs text-text-secondary mb-4 italic px-2 border-l-2 border-primary/30">{section.description}</p>
+                            )}
+                            {renderSectionContent(section, data)}
+                        </SectionContainer>
+                    </EditableWrapper>
                 </div>
             ))}
         </div>

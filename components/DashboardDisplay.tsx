@@ -3,10 +3,14 @@ import { DashboardAnalysisResult } from '../services/geminiService';
 import { DataRow } from '../App';
 import { KpiCard } from './KpiCard';
 import { ChartRenderer } from './ChartRenderer';
+import { EditableWrapper } from './EditableWrapper';
 
 interface DashboardDisplayProps {
     dashboard: DashboardAnalysisResult;
     data: DataRow[];
+    isEditMode: boolean;
+    onDelete: (path: string) => void;
+    onEdit: (path: string, type: 'kpi' | 'chart', data: any) => void;
 }
 
 const ChartCard: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -15,7 +19,7 @@ const ChartCard: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     </div>
 );
 
-export const DashboardDisplay: React.FC<DashboardDisplayProps> = ({ dashboard, data }) => {
+export const DashboardDisplay: React.FC<DashboardDisplayProps> = ({ dashboard, data, isEditMode, onDelete, onEdit }) => {
     const { kpis, charts } = dashboard;
     
     // Fallback for safety, though the API schema should enforce this.
@@ -28,45 +32,43 @@ export const DashboardDisplay: React.FC<DashboardDisplayProps> = ({ dashboard, d
             {/* KPIs */}
             <div className="col-span-12 grid grid-cols-1 sm:grid-cols-3 gap-6">
                  {kpis.map((kpi, index) => (
-                    <KpiCard key={`kpi-${index}`} kpi={kpi} />
+                    <EditableWrapper 
+                        key={`kpi-${index}`}
+                        isEditMode={isEditMode}
+                        onDelete={() => onDelete(`kpis.${index}`)}
+                        onEdit={() => onEdit(`kpis.${index}`, 'kpi', kpi)}
+                    >
+                        <KpiCard kpi={kpi} />
+                    </EditableWrapper>
                 ))}
             </div>
 
-            {/* Main Charts */}
-            <div className="col-span-12 lg:col-span-4">
-                <ChartCard>
-                    <ChartRenderer chartInfo={charts.admissionByDivision} data={data} />
-                </ChartCard>
-            </div>
-            <div className="col-span-12 lg:col-span-8">
-                <ChartCard>
-                    <ChartRenderer chartInfo={charts.admissionVsCost} data={data} />
-                </ChartCard>
-            </div>
+            {/* Helper to render editable chart */}
+            {Object.entries(charts).map(([key, chartConfig]) => {
+                // Mapping chart keys to grid spans manually to maintain layout
+                // Or we can just map them linearly if we want full flexibility, 
+                // but let's try to preserve the layout structure if the key exists.
+                
+                let spanClass = "col-span-12 lg:col-span-4";
+                if (key === 'admissionVsCost') spanClass = "col-span-12 lg:col-span-8";
+                if (key === 'treatmentConfidence') spanClass = "col-span-12";
 
-            {/* Secondary Charts */}
-             <div className="col-span-12 lg:col-span-4">
-                <ChartCard>
-                    <ChartRenderer chartInfo={charts.patientSatisfaction} data={data} />
-                </ChartCard>
-            </div>
-             <div className="col-span-12 lg:col-span-4">
-                 <ChartCard>
-                    <ChartRenderer chartInfo={charts.availableStaff} data={data} />
-                </ChartCard>
-            </div>
-             <div className="col-span-12 lg:col-span-4">
-                 <ChartCard>
-                    <ChartRenderer chartInfo={charts.avgWaitTime} data={data} />
-                </ChartCard>
-            </div>
+                if (!chartConfig) return null; // If deleted
 
-            {/* Tertiary Chart */}
-             <div className="col-span-12">
-                 <ChartCard>
-                    <ChartRenderer chartInfo={charts.treatmentConfidence} data={data} />
-                </ChartCard>
-            </div>
+                return (
+                    <div key={key} className={spanClass}>
+                        <EditableWrapper
+                            isEditMode={isEditMode}
+                            onDelete={() => onDelete(`charts.${key}`)}
+                            onEdit={() => onEdit(`charts.${key}`, 'chart', chartConfig)}
+                        >
+                            <ChartCard>
+                                <ChartRenderer chartInfo={chartConfig} data={data} />
+                            </ChartCard>
+                        </EditableWrapper>
+                    </div>
+                );
+            })}
         </div>
     );
 };
