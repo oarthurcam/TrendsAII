@@ -4,9 +4,12 @@ import { useTheme } from '../hooks/useTheme';
 interface HeaderProps {
     title: string | null;
     onOpenShareModal: () => void;
+    onToggleSidebar: () => void;
+    onToggleChat: () => void;
+    isChatOpen: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title, onOpenShareModal }) => {
+export const Header: React.FC<HeaderProps> = ({ title, onOpenShareModal, onToggleSidebar, onToggleChat, isChatOpen }) => {
     const [isHelpOpen, setIsHelpOpen] = useState(false);
     const helpPopoverRef = useRef<HTMLDivElement>(null);
     const helpButtonRef = useRef<HTMLButtonElement>(null);
@@ -36,15 +39,20 @@ export const Header: React.FC<HeaderProps> = ({ title, onOpenShareModal }) => {
             <div className="flex items-center justify-between">
                 <div className="flex items-center">
                     {title ? (
-                        <h2 className="text-2xl font-semibold text-text">{title}</h2>
+                        <>
+                             <button onClick={onToggleSidebar} className="lg:hidden p-2 mr-2 rounded-full text-text-secondary hover:bg-slate-100 dark:hover:bg-slate-700">
+                                <span className="material-icons">menu</span>
+                            </button>
+                            <h2 className="text-2xl font-semibold text-text">{title}</h2>
+                        </>
                     ) : (
-                        <div className="flex items-center gap-1" aria-label="TrendsAI Logo">
+                        <button onClick={onToggleSidebar} className="flex items-center gap-1 -ml-2 p-2 rounded-lg transition-colors hover:bg-slate-500/10" aria-label="Toggle Sidebar">
                             <span className="material-icons text-primary text-3xl">analytics</span>
                             <div className="flex items-baseline text-xl">
                                <span className="font-semibold text-text tracking-tight">Trends</span>
                                <span className="font-bold text-primary tracking-tight">AI</span>
                             </div>
-                        </div>
+                        </button>
                     )}
                 </div>
                 <div className="flex items-center">
@@ -56,13 +64,23 @@ export const Header: React.FC<HeaderProps> = ({ title, onOpenShareModal }) => {
                         <span className="material-icons">{theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'light_mode' : 'dark_mode'}</span>
                     </button>
                     {title ? (
-                         <button
-                            onClick={onOpenShareModal}
-                            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-white bg-primary hover:bg-primary/90 transition-colors"
-                        >
-                            <span className="material-icons text-base">share</span>
-                            Compartilhar Insights
-                        </button>
+                        <div className="flex items-center gap-2">
+                             <button
+                                onClick={onToggleChat}
+                                className={`p-2 rounded-full transition-colors ${isChatOpen ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-text'}`}
+                                title="Chat com IA"
+                            >
+                                <span className="material-icons">smart_toy</span>
+                            </button>
+                            <button
+                                onClick={onOpenShareModal}
+                                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-white bg-primary hover:bg-primary/90 transition-colors"
+                            >
+                                <span className="material-icons text-base">share</span>
+                                <span className="hidden sm:inline">Compartilhar Insights</span>
+                                <span className="sm:hidden">Compartilhar</span>
+                            </button>
+                        </div>
                     ) : (
                     <>
                         <button 

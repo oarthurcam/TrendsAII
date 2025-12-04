@@ -5,9 +5,22 @@ interface FileUploadProps {
   onAnalyze: () => void;
   isLoading: boolean;
   fileName: string | null;
+  ctaText?: string;
+  icon?: string;
+  acceptedFormats?: string[]; // New prop for dynamic formats
+  helperText?: string; // New prop for dynamic text
 }
 
-export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onAnalyze, isLoading, fileName }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ 
+    onFileSelect, 
+    onAnalyze, 
+    isLoading, 
+    fileName, 
+    ctaText, 
+    icon,
+    acceptedFormats = ['.xlsx', '.xls', '.csv', '.pdf', '.docx', '.doc', '.txt', '.pptx', '.ppt', '.odt'],
+    helperText = "Documentos e Planilhas"
+}) => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -52,6 +65,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onAnalyze,
     }
   };
 
+  const acceptString = acceptedFormats.join(', ');
+
   return (
     <div className="bg-card p-6 rounded-xl flex flex-col items-center justify-center text-center gap-4 shadow-sm">
       <div
@@ -72,7 +87,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onAnalyze,
           type="file" 
           className="sr-only" 
           onChange={handleFileChange} 
-          accept=".xlsx, .xls" 
+          accept={acceptString}
           disabled={isLoading} 
         />
         
@@ -85,10 +100,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onAnalyze,
           </>
         ) : (
           <>
-            <span className="material-icons text-5xl text-primary mb-4">upload_file</span>
-            <p className="mb-1 text-text font-semibold">Arraste e solte o arquivo</p>
-            <p className="text-sm text-text-secondary">ou clique para selecionar</p>
-            <p className="text-xs text-text-secondary mt-4 opacity-70">Suporta .xlsx, .xls</p>
+            <span className="material-icons text-5xl text-primary mb-4">{icon || 'cloud_upload'}</span>
+            <p className="mb-1 text-text font-semibold">Arraste seus arquivos aqui</p>
+            <p className="text-sm text-text-secondary">{helperText}</p>
+            <p className="text-xs text-text-secondary mt-4 opacity-70">
+                Suporta {acceptedFormats.map(ext => ext.replace('.', '').toUpperCase()).join(', ')}
+            </p>
           </>
         )}
       </div>
@@ -107,7 +124,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onAnalyze,
             Analisando...
           </>
         ) : (
-          'Gerar Insights'
+          ctaText || 'Gerar Diagnóstico'
         )}
       </button>
     </div>

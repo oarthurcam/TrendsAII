@@ -16,10 +16,16 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, dashboa
     useEffect(() => {
         if (isOpen && dashboardRef.current) {
             const element = dashboardRef.current;
+            const chatElement = document.getElementById('interactive-chat-wrapper');
+
             setIsLoading(true);
             setPreviewImage(null);
             
             setTimeout(() => {
+                if (chatElement) {
+                    chatElement.style.display = 'none';
+                }
+
                 const isDarkMode = document.documentElement.classList.contains('dark');
                 const backgroundColor = isDarkMode ? '#0f172a' : '#f7f8fa';
 
@@ -44,7 +50,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, dashboa
 
                     if (!ctx) {
                         setPreviewImage(sourceCanvas.toDataURL('image/png'));
-                        setIsLoading(false);
                         return;
                     }
 
@@ -94,9 +99,12 @@ export const ShareModal: React.FC<ShareModalProps> = ({ isOpen, onClose, dashboa
                     ctx.fillText('Gerado por TrendsAI', TARGET_WIDTH / 2, TARGET_HEIGHT - (FOOTER_HEIGHT / 2));
                     
                     setPreviewImage(finalCanvas.toDataURL('image/png'));
-                    setIsLoading(false);
                 }).catch((error: any) => {
                     console.error("Error generating canvas:", error);
+                }).finally(() => {
+                    if (chatElement) {
+                        chatElement.style.display = '';
+                    }
                     setIsLoading(false);
                 });
             }, 100);

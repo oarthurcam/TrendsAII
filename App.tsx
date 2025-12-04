@@ -1,10 +1,13 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { FileUpload } from './components/FileUpload';
-import { analyzeExcelData, AnalysisResult } from './services/geminiService';
+import { analyzeExcelData, analyzeDocument, AnalysisResult, DashboardAnalysisResult } from './services/geminiService';
 import { Footer } from './components/Footer';
-import { ChartRenderer } from './components/ChartRenderer';
 import { ShareModal } from './components/ShareModal';
+import { DashboardDisplay } from './components/DashboardDisplay';
+import { InsightsDisplay } from './components/InsightsDisplay';
+import { ChatSidebar, Message } from './components/ChatSidebar';
+import { LoadingState } from './components/LoadingState';
 
 // TypeScript declaration for the libraries loaded from CDN
 declare const XLSX: any;
@@ -12,18 +15,24 @@ declare const XLSX: any;
 // Define a type for the parsed Excel data
 export type DataRow = { [key: string]: string | number };
 
+type ActiveView = 'insights' | 'dashboards';
+
 // Define a type for history entries
 interface HistoryEntry {
   id: string;
   fileName: string;
-  insights: AnalysisResult;
-  data: DataRow[];
+  insights: AnalysisResult | DashboardAnalysisResult;
+  data: DataRow[] | null; // Data might be null for non-Excel files
+  type: ActiveView;
+  chatMessages?: Message[];
 }
 
 interface ChatGPTSidebarProps {
     history: HistoryEntry[];
     activeId: string | null;
     onNewInsight: () => void;
+    onGoToDashboards: () => void;
+    activeView: ActiveView;
     onSelectHistory: (id: string) => void;
     onDeleteHistory: (id: string) => void;
     onRenameHistory: (id: string, newTitle: string) => void;
@@ -31,19 +40,12 @@ interface ChatGPTSidebarProps {
     onToggle: () => void;
 }
 
-const ChatGPTSidebar: React.FC<ChatGPTSidebarProps> = ({ history, activeId, onNewInsight, onSelectHistory, onDeleteHistory, onRenameHistory, isOpen, onToggle }) => {
+const ChatGPTSidebar: React.FC<ChatGPTSidebarProps> = ({ history, activeId, onNewInsight, onGoToDashboards, activeView, onSelectHistory, onDeleteHistory, onRenameHistory, isOpen, onToggle }) => {
     const [popoverState, setPopoverState] = useState<{ id: string | null; x: number; y: number }>({ id: null, x: 0, y: 0 });
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState('');
     const renameInputRef = useRef<HTMLInputElement>(null);
 
-    const SidebarLink: React.FC<{ icon: string; text: string }> = ({ icon, text }) => (
-        <div className="flex items-center space-x-4 p-3 rounded-md hover:bg-slate-500/10 text-text-secondary hover:text-primary transition-colors">
-            <span className="material-icons">{icon}</span>
-            <span className="text-sm font-medium">{text}</span>
-        </div>
-    );
-    
     useEffect(() => {
         if (renamingId && renameInputRef.current) {
             renameInputRef.current.focus();
@@ -96,8 +98,46 @@ const ChatGPTSidebar: React.FC<ChatGPTSidebarProps> = ({ history, activeId, onNe
         onDeleteHistory(id);
     };
 
+    const insightsHistory = history.filter(item => item.type === 'insights');
+    const dashboardsHistory = history.filter(item => item.type === 'dashboards');
+
+    const renderHistoryItem = (item: HistoryEntry) => (
+      <div key={item.id} className="relative group">
+        {renamingId === item.id ? (
+          <input
+            ref={renameInputRef}
+            type="text"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={handleRenameSubmit}
+            onKeyDown={handleRenameKeyDown}
+            className="w-full text-sm p-3 rounded-md bg-primary/20 border border-primary text-text"
+          />
+        ) : (
+          <button onClick={() => onSelectHistory(item.id)} className={`w-full flex items-center justify-between text-sm p-3 rounded-md truncate text-left ${item.id === activeId ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-slate-500/10'} transition-colors`}>
+            <span className="truncate">{item.insights.dashboardTitle}</span>
+            <div className="flex items-center">
+              {item.id === activeId && <span className="w-2 h-2 rounded-full bg-primary mr-2"></span>}
+              <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                <button onClick={(e) => handleOpenPopover(e, item.id)} className="p-1 rounded-full hover:bg-slate-500/20">
+                  <span className="material-icons text-lg">more_horiz</span>
+                </button>
+              </div>
+            </div>
+          </button>
+        )}
+      </div>
+    );
+
     return (
         <>
+            {isOpen && (
+                <div
+                    onClick={onToggle}
+                    className="fixed inset-0 bg-black/40 z-30 lg:hidden"
+                    aria-hidden="true"
+                ></div>
+            )}
             {popoverState.id && (
                 <div 
                     style={{ top: `${popoverState.y}px`, left: `${popoverState.x}px` }} 
@@ -120,7 +160,11 @@ const ChatGPTSidebar: React.FC<ChatGPTSidebarProps> = ({ history, activeId, onNe
                     </button>
                 </div>
             )}
-            <aside className={`fixed top-0 left-0 z-40 bg-sidebar text-text flex flex-col h-screen hidden lg:flex border-r border-border transition-all duration-300 ease-in-out ${isOpen ? 'w-[260px] p-2' : 'w-16 items-center py-4'}`}>
+            <aside className={`fixed top-0 left-0 z-40 bg-sidebar text-text flex flex-col h-screen border-r border-border transition-transform lg:transition-all duration-300 ease-in-out
+                ${isOpen 
+                    ? 'translate-x-0 w-[260px] p-2' 
+                    : '-translate-x-full w-[260px] p-2 lg:p-0 lg:translate-x-0 lg:w-16 lg:items-center lg:py-4'}
+            `}>
                 {isOpen ? (
                     <div className="flex flex-col h-full w-full overflow-hidden">
                         <div className="flex-shrink-0">
@@ -130,47 +174,39 @@ const ChatGPTSidebar: React.FC<ChatGPTSidebarProps> = ({ history, activeId, onNe
                                 </button>
                             </div>
                             <div className="p-1">
-                                <button onClick={onNewInsight} className="w-full text-left">
-                                    <SidebarLink icon="create" text="Novo Insight" />
+                                <button onClick={onNewInsight} className={`w-full text-left flex items-center space-x-4 p-3 rounded-md transition-colors ${activeView === 'insights' ? 'bg-primary/10 text-primary font-medium' : 'text-text-secondary hover:bg-slate-500/10 hover:text-primary'}`}>
+                                    <span className="material-icons text-base">create</span>
+                                    <span className="text-sm">Novo Diagnóstico</span>
+                                </button>
+                            </div>
+                            <div className="p-1">
+                                <button onClick={onGoToDashboards} className={`w-full text-left flex items-center space-x-4 p-3 rounded-md transition-colors ${activeView === 'dashboards' ? 'bg-primary/10 text-primary font-medium' : 'text-text-secondary hover:bg-slate-500/10 hover:text-primary'}`}>
+                                    <span className="material-icons text-base">dashboard</span>
+                                    <span className="text-sm">Dashboards</span>
                                 </button>
                             </div>
                         </div>
 
                         <div className="my-2 border-t border-border"></div>
                         
-                        <div className="flex-grow overflow-y-auto px-1 space-y-1">
-                            <h3 className="text-xs font-medium text-text-secondary/70 px-3 pt-2 pb-1">Análises</h3>
-                            {history.map((item) => (
-                                <div key={item.id} className="relative group">
-                                    {renamingId === item.id ? (
-                                        <input
-                                            ref={renameInputRef}
-                                            type="text"
-                                            value={renameValue}
-                                            onChange={(e) => setRenameValue(e.target.value)}
-                                            onBlur={handleRenameSubmit}
-                                            onKeyDown={handleRenameKeyDown}
-                                            className="w-full text-sm p-3 rounded-md bg-primary/20 border border-primary text-text"
-                                        />
-                                    ) : (
-                                        <button onClick={() => onSelectHistory(item.id)} className={`w-full flex items-center justify-between text-sm p-3 rounded-md truncate text-left ${item.id === activeId ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-slate-500/10'} transition-colors`}>
-                                            <span className="truncate">{item.insights.dashboardTitle}</span>
-                                            <div className="flex items-center">
-                                                {item.id === activeId && <span className="w-2 h-2 rounded-full bg-primary mr-2"></span>}
-                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <button onClick={(e) => handleOpenPopover(e, item.id)} className="p-1 rounded-full hover:bg-slate-500/20">
-                                                        <span className="material-icons text-lg">more_horiz</span>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </button>
-                                    )}
+                        <div className="flex-grow overflow-y-auto px-1">
+                            {insightsHistory.length > 0 && (
+                                <div className="space-y-1">
+                                    <h3 className="text-xs font-medium text-text-secondary/70 px-3 pt-2 pb-1">Histórico</h3>
+                                    {insightsHistory.map(renderHistoryItem)}
                                 </div>
-                            ))}
+                            )}
+                            {dashboardsHistory.length > 0 && (
+                                <div className="space-y-1">
+                                    {insightsHistory.length > 0 && <div className="my-2 border-t border-border -mx-1"></div>}
+                                    <h3 className="text-xs font-medium text-text-secondary/70 px-3 pt-2 pb-1">Dashboards</h3>
+                                    {dashboardsHistory.map(renderHistoryItem)}
+                                </div>
+                            )}
                         </div>
                     </div>
                 ) : (
-                    <div className="flex h-full w-full items-center justify-start flex-col">
+                    <div className="flex h-full w-full items-center justify-start flex-col pt-2">
                         <button onClick={onToggle} className="p-2 rounded-md hover:bg-slate-500/10">
                             <span className="material-icons text-xl text-primary">menu</span>
                         </button>
@@ -181,112 +217,60 @@ const ChatGPTSidebar: React.FC<ChatGPTSidebarProps> = ({ history, activeId, onNe
     );
 };
 
-const Card: React.FC<{title: string, icon: string, children: React.ReactNode, className?: string}> = ({title, icon, children, className}) => (
-    <div className={`bg-card p-6 rounded-xl shadow-sm h-full flex flex-col ${className}`}>
-        <h3 className="font-semibold mb-4 flex items-center text-text flex-shrink-0">
-            <span className="material-icons text-primary mr-2">{icon}</span>
-            {title}
-        </h3>
-        <div className="flex-grow overflow-y-auto">
-            {children}
-        </div>
-    </div>
-);
-
-const SkeletonCard: React.FC = () => (
-    <div className="bg-card p-6 rounded-xl h-80 animate-pulse">
-        <div className="h-6 bg-slate-500/20 rounded w-1/3 mb-4"></div>
-        <div className="space-y-3">
-            <div className="h-4 bg-slate-500/20 rounded w-full"></div>
-            <div className="h-4 bg-slate-500/20 rounded w-5/6"></div>
-            <div className="h-4 bg-slate-500/20 rounded w-full"></div>
-            <div className="h-4 bg-slate-500/20 rounded w-3/4"></div>
-        </div>
-    </div>
-);
-
-const KeyInsightsCard: React.FC<{ insights: string | undefined }> = ({ insights }) => {
-    const renderContent = () => {
-        if (!insights) return null;
-
-        const trimmedInsights = insights.trim();
-        if (trimmedInsights.startsWith('*')) {
-            const items = trimmedInsights.split('*').map(s => s.trim()).filter(Boolean);
-            return (
-                <ul className="list-disc list-inside space-y-2 text-sm text-text-secondary">
-                    {items.map((item, index) => <li key={index}>{item}</li>)}
-                </ul>
-            );
-        }
-
-        const paragraphs = trimmedInsights.split(/\n+/).filter(p => p.trim() !== '');
-        return (
-            <div className="space-y-4 text-sm text-text-secondary">
-                {paragraphs.map((para, index) => <p key={index}>{para}</p>)}
-            </div>
-        );
-    };
-
-    return (
-        <Card title="Insights" icon="lightbulb">
-            {renderContent()}
-        </Card>
-    );
+// Helper to convert file to Base64
+const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => {
+            const result = reader.result as string;
+            // Remove the data URL prefix (e.g., "data:application/pdf;base64,")
+            const base64String = result.split(',')[1];
+            resolve(base64String);
+        };
+        reader.onerror = (error) => reject(error);
+    });
 };
 
-const QuickQACard: React.FC<{ questions: { question: string; answer: string; }[] | undefined }> = ({ questions }) => {
-    if (!questions || questions.length === 0) return null;
-
-    return (
-        <Card title="Dúvidas Rápidas" icon="quiz">
-            <div className="space-y-4 text-sm">
-                {questions.map((qa, index) => (
-                    <div key={index}>
-                        <p className="font-semibold text-text">{qa.question}</p>
-                        <p className="text-text-secondary">{qa.answer}</p>
-                    </div>
-                ))}
-            </div>
-        </Card>
-    );
-};
-
-const ExecutiveSummaryCard: React.FC<{ summary: string | undefined }> = ({ summary }) => {
-    return (
-        <Card title="Resumo Executivo" icon="article">
-            <p className="text-text-secondary text-sm">{summary}</p>
-        </Card>
-    );
-};
-
-const ChartCard: React.FC<{ chartInfo: AnalysisResult['suggestedChart'] | undefined, data: DataRow[] | null }> = ({ chartInfo, data }) => {
-    return (
-        <Card title="Visualização Sugerida" icon="bar_chart" className="overflow-hidden">
-            {chartInfo && data ? <ChartRenderer chartInfo={chartInfo} data={data} /> : <p>Carregando gráfico...</p>}
-        </Card>
-    );
-};
+const INSIGHTS_EXTENSIONS = ['.xlsx', '.xls', '.csv', '.pdf', '.docx', '.doc', '.txt', '.pptx', '.ppt', '.odt'];
+const DASHBOARD_EXTENSIONS = ['.xlsx', '.xls', '.csv'];
 
 const App: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [insights, setInsights] = useState<AnalysisResult | null>(null);
+  const [insights, setInsights] = useState<AnalysisResult | DashboardAnalysisResult | null>(null);
   const [excelData, setExcelData] = useState<DataRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<ActiveView>('insights');
 
   const [analysisHistory, setAnalysisHistory] = useState<HistoryEntry[]>([]);
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  
+  // New state for Chat Sidebar
+  const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
+  
   const dashboardRef = useRef<HTMLDivElement>(null);
 
   // Load history from local storage on initial render
   useEffect(() => {
-      const storedHistory = localStorage.getItem('analysis_history');
-      if (storedHistory) {
-        setAnalysisHistory(JSON.parse(storedHistory));
+    const storedHistory = localStorage.getItem('analysis_history');
+    if (storedHistory) {
+      try {
+        const parsedHistory: HistoryEntry[] = JSON.parse(storedHistory);
+        // Migration for old history items without a 'type'
+        const migratedHistory = parsedHistory.map(item => ({
+          ...item,
+          type: item.type || 'insights' 
+        }));
+        setAnalysisHistory(migratedHistory);
+      } catch (e) {
+        console.error("Failed to parse history from localStorage", e);
+        localStorage.removeItem('analysis_history');
       }
+    }
   }, []);
 
   // Persist history to localStorage whenever it changes
@@ -298,11 +282,20 @@ const App: React.FC = () => {
     }
   }, [analysisHistory]);
   
+  // Update document title based on the active view
+  useEffect(() => {
+    if (activeView === 'dashboards') {
+      document.title = 'TrendsAI | Dashboards Rápidos';
+    } else {
+      document.title = 'TrendsBI | Diagnóstico Inteligente';
+    }
+  }, [activeView]);
+
   const toggleSidebar = () => {
     setIsSidebarOpen(prev => !prev);
   };
 
-  const handleNewInsight = () => {
+  const resetState = () => {
     setFile(null);
     setIsLoading(false);
     setInsights(null);
@@ -312,16 +305,27 @@ const App: React.FC = () => {
     setActiveHistoryId(null);
   };
 
+  const handleNewInsight = () => {
+    resetState();
+    setActiveView('insights');
+  };
+
+  const handleGoToDashboards = () => {
+    resetState();
+    setActiveView('dashboards');
+  };
+
   const handleSelectHistory = (id: string) => {
     const selected = analysisHistory.find(item => item.id === id);
     if (selected) {
       setInsights(selected.insights);
-      setExcelData(selected.data);
+      setExcelData(selected.data); // Note: data might be null for documents
       setFileName(selected.fileName);
       setFile(null);
       setError(null);
       setIsLoading(false);
       setActiveHistoryId(id);
+      setActiveView(selected.type); // Switch view to match the selected history item
     }
   };
   
@@ -345,11 +349,24 @@ const App: React.FC = () => {
         }
     };
 
+    const handleUpdateChatHistory = (newMessages: Message[]) => {
+        if (!activeHistoryId) return;
+        
+        setAnalysisHistory(prev => 
+            prev.map(item => 
+                item.id === activeHistoryId
+                ? { ...item, chatMessages: newMessages }
+                : item
+            )
+        );
+    };
+
   const handleFileSelect = (selectedFile: File) => {
     if (selectedFile) {
-      const validExtensions = ['.xlsx', '.xls'];
       const fileExtension = selectedFile.name.substring(selectedFile.name.lastIndexOf('.')).toLowerCase();
       
+      const validExtensions = activeView === 'dashboards' ? DASHBOARD_EXTENSIONS : INSIGHTS_EXTENSIONS;
+
       if (validExtensions.includes(fileExtension)) {
         setFile(selectedFile);
         setFileName(selectedFile.name);
@@ -357,7 +374,11 @@ const App: React.FC = () => {
         setInsights(null);
         setExcelData(null);
       } else {
-        setError('Por favor, envie um arquivo Excel válido (.xlsx ou .xls).');
+        if (activeView === 'dashboards') {
+            setError('Formato não suportado para Dashboards. Por favor envie arquivos Excel ou CSV.');
+        } else {
+            setError('Formato não suportado. Por favor envie Excel, PDF, Word, PowerPoint ou Texto.');
+        }
         setFile(null);
         setFileName(null);
       }
@@ -376,82 +397,109 @@ const App: React.FC = () => {
     setExcelData(null);
     setActiveHistoryId(null);
 
+    const isSpreadsheet = file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv');
+
     try {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const data = event.target?.result;
-          const workbook = XLSX.read(data, { type: 'array' });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          
-          const jsonData: DataRow[] = XLSX.utils.sheet_to_json(worksheet);
-          const csvData = XLSX.utils.sheet_to_csv(worksheet);
+        let result: AnalysisResult | DashboardAnalysisResult;
+        let processedData: DataRow[] | null = null;
 
-          if (!csvData || csvData.trim() === '') {
-            throw new Error("O arquivo Excel parece estar vazio ou não pôde ser lido.");
-          }
+        if (isSpreadsheet) {
+             // Logic for Excel/CSV files (Client-side Parsing)
+             await new Promise<void>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const data = event.target?.result;
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        
+                        const jsonData: DataRow[] = XLSX.utils.sheet_to_json(worksheet);
+                        const csvData = XLSX.utils.sheet_to_csv(worksheet);
 
-          setExcelData(jsonData);
-          const result = await analyzeExcelData(csvData);
-          setInsights(result);
+                        if (!csvData || csvData.trim() === '') {
+                             reject(new Error("O arquivo parece estar vazio."));
+                             return;
+                        }
 
-          const newId = Date.now().toString();
-          const newHistoryEntry: HistoryEntry = {
-            id: newId,
-            fileName: file.name,
-            insights: result,
-            data: jsonData,
-          };
-          setAnalysisHistory(prev => [newHistoryEntry, ...prev]);
-          setActiveHistoryId(newId);
-
-        } catch (innerError: any) {
-          setError(`Falha ao processar o arquivo: ${innerError.message}`);
-          setExcelData(null);
-        } finally {
-          setIsLoading(false);
+                        processedData = jsonData;
+                        setExcelData(jsonData);
+                        result = await analyzeExcelData(csvData, activeView);
+                        setInsights(result);
+                        resolve();
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                reader.onerror = () => reject(new Error("Erro ao ler arquivo."));
+                reader.readAsArrayBuffer(file);
+             });
+        } else {
+            // Logic for Documents (PDF, Word, etc.) - Server-side / Multimodal Analysis
+            if (activeView === 'dashboards') {
+                 // Force fallback or error if dashboard view somehow gets a document
+                 throw new Error("Dashboards só podem ser gerados a partir de planilhas Excel ou CSV.");
+            }
+            
+            const base64Data = await fileToBase64(file);
+            result = await analyzeDocument(base64Data, file.type || 'application/octet-stream');
+            setInsights(result);
         }
-      };
-      reader.onerror = () => {
-        setError('Ocorreu um erro ao ler o arquivo.');
+
+        // Add to history (common for both types)
+        // Note: result! is safe here because we await the operations above
+        setInsights(currentInsights => {
+             const newId = Date.now().toString();
+             const newHistoryEntry: HistoryEntry = {
+                id: newId,
+                fileName: file.name,
+                insights: currentInsights as AnalysisResult | DashboardAnalysisResult,
+                data: processedData, // Will be null for documents
+                type: activeView === 'dashboards' && !isSpreadsheet ? 'insights' : activeView, // Fallback check
+                chatMessages: [], 
+              };
+              setAnalysisHistory(prev => [newHistoryEntry, ...prev]);
+              setActiveHistoryId(newId);
+              return currentInsights;
+        });
+
+    } catch (e: any) {
+        setError(`Falha ao processar o arquivo: ${e.message}`);
         setIsLoading(false);
-      };
-      reader.readAsArrayBuffer(file);
-    } catch (e: any)
-      {
-      setError(`Um erro inesperado ocorreu: ${e.message}`);
-      setIsLoading(false);
+    } finally {
+        setIsLoading(false);
     }
-  }, [file]);
+  }, [file, activeView]);
 
-  const showDashboard = excelData || isLoading || error;
-
-  const renderDashboardComponent = (componentKey: string) => {
-    switch (componentKey) {
-        case 'EXECUTIVE_SUMMARY':
-            return <ExecutiveSummaryCard summary={insights?.executiveSummary} />;
-        case 'KEY_INSIGHTS':
-            return <KeyInsightsCard insights={insights?.keyInsights} />;
-        case 'CHART':
-            return <ChartCard chartInfo={insights?.suggestedChart} data={excelData} />;
-        case 'QUICK_QA':
-            return <QuickQACard questions={insights?.quickQuestions} />;
-        default:
-            return null;
-    }
-  };
+  const showResults = insights || isLoading || error;
   
-  const componentsToRender = insights?.layout.flatMap(row => row.cells);
+  // Check if we have data suitable for the legacy dashboard view
+  const isDashboardView = activeView === 'dashboards' && insights && 'kpis' in insights;
+
+  // Retrieve messages for current history item
+  const currentChatMessages = activeHistoryId 
+      ? analysisHistory.find(h => h.id === activeHistoryId)?.chatMessages 
+      : undefined;
 
   return (
-    <div className="bg-background min-h-screen text-text">
+    <div className="bg-background min-h-screen text-text relative">
       <ShareModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
         dashboardRef={dashboardRef}
         title={insights?.dashboardTitle}
       />
+      
+      <ChatSidebar 
+        isOpen={isChatSidebarOpen} 
+        onClose={() => setIsChatSidebarOpen(false)}
+        initialData={excelData}
+        initialFileName={fileName}
+        activeId={activeHistoryId}
+        savedMessages={currentChatMessages}
+        onUpdateMessages={handleUpdateChatHistory}
+      />
+
       <ChatGPTSidebar 
         history={analysisHistory}
         activeId={activeHistoryId}
@@ -461,27 +509,53 @@ const App: React.FC = () => {
         onRenameHistory={handleRenameHistory}
         isOpen={isSidebarOpen}
         onToggle={toggleSidebar}
+        activeView={activeView}
+        onGoToDashboards={handleGoToDashboards}
       />
-      <div className={`flex flex-col min-h-screen transition-all duration-300 ease-in-out ${isSidebarOpen ? 'lg:ml-[260px]' : 'lg:ml-16'}`}>
+      <div className={`flex flex-col min-h-screen transition-all duration-300 ease-in-out ${isSidebarOpen ? 'lg:ml-[260px]' : 'lg:ml-16'} ${isChatSidebarOpen ? 'lg:mr-[350px]' : ''}`}>
         <Header 
           title={insights?.dashboardTitle || null}
           onOpenShareModal={() => setIsShareModalOpen(true)}
+          onToggleSidebar={toggleSidebar}
+          onToggleChat={() => setIsChatSidebarOpen(prev => !prev)}
+          isChatOpen={isChatSidebarOpen}
         />
         <main className="flex-grow container mx-auto px-6 py-8 flex flex-col">
-          {!showDashboard ? (
+          {!showResults ? (
             <div className="flex-grow flex flex-col items-center justify-center text-center">
-              <div className="max-w-xl">
-                <h2 className="text-3xl font-bold mb-2 text-text">Diagnóstico Rápido de Dados</h2>
-                <p className="text-lg text-text-secondary mb-8">Faça o upload da sua planilha para descobrir tendências e insights chave em segundos.</p>
-                <div className="w-full max-w-md mx-auto">
-                  <FileUpload
-                    onFileSelect={handleFileSelect}
-                    onAnalyze={handleAnalyze}
-                    isLoading={isLoading}
-                    fileName={fileName}
-                  />
+              {activeView === 'insights' ? (
+                <div className="max-w-xl">
+                  <h2 className="text-3xl font-bold mb-2 text-text">Diagnóstico Rápido de Dados</h2>
+                  <p className="text-lg text-text-secondary mb-8">Faça o upload de documentos ou planilhas para descobrir tendências e insights chave em segundos.</p>
+                  <div className="w-full max-w-md mx-auto">
+                    <FileUpload
+                      onFileSelect={handleFileSelect}
+                      onAnalyze={handleAnalyze}
+                      isLoading={isLoading}
+                      fileName={fileName}
+                      acceptedFormats={INSIGHTS_EXTENSIONS}
+                      helperText="Documentos e Planilhas"
+                    />
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="max-w-xl">
+                  <h2 className="text-3xl font-bold mb-2 text-text">Dashboards rápidos, sem esforço!</h2>
+                  <p className="text-lg text-text-secondary mb-8">Transforme suas planilhas Excel ou CSV em dashboards dinâmicos com apenas um clique.</p>
+                  <div className="w-full max-w-md mx-auto">
+                    <FileUpload
+                      onFileSelect={handleFileSelect}
+                      onAnalyze={handleAnalyze}
+                      isLoading={isLoading}
+                      fileName={fileName}
+                      ctaText="Crie seu dashboard agora"
+                      icon="space_dashboard"
+                      acceptedFormats={DASHBOARD_EXTENSIONS}
+                      helperText="Arquivos Excel e CSV"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -493,13 +567,16 @@ const App: React.FC = () => {
                   </div>
                 </div>
               )}
-              <div ref={dashboardRef} className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {isLoading && Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
-                {!isLoading && componentsToRender?.map(({ componentKey, width }) => (
-                  <div key={componentKey} className={width === 2 ? 'md:col-span-2' : 'md:col-span-1'}>
-                    {renderDashboardComponent(componentKey)}
-                  </div>
-                ))}
+              <div ref={dashboardRef} className="w-full">
+                {isLoading ? (
+                  <LoadingState />
+                ) : (
+                  insights && (
+                    isDashboardView ? 
+                    <DashboardDisplay dashboard={insights as DashboardAnalysisResult} data={excelData || []} /> :
+                    <InsightsDisplay insights={insights as AnalysisResult} data={excelData || []} fileName={fileName} />
+                  )
+                )}
               </div>
             </>
           )}
